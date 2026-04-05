@@ -1,4 +1,4 @@
-// Sources/BirdRa1nAdmin/Services/AuthStore.swift
+// BirdRa1nAdmin/Services/AuthStore.swift
 import SwiftUI
 import Combine
 import Supabase
@@ -6,7 +6,7 @@ import Supabase
 @MainActor
 final class AuthStore: ObservableObject {
     @Published var isAuthenticated = false
-    @Published var isLoading = false
+    @Published var isLoading = true      // começa true — aguarda checkSession
     @Published var currentUser: AdminUser?
     @Published var errorMessage: String?
 
@@ -21,6 +21,9 @@ final class AuthStore: ObservableObject {
             let session = try await supabase.auth.signIn(email: email, password: password)
             try await fetchAdminRecord(userId: session.user.id.uuidString)
             isAuthenticated = true
+        } catch let err as AppError {
+            errorMessage = err.localizedDescription
+            try? await supabase.auth.signOut()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -34,7 +37,7 @@ final class AuthStore: ObservableObject {
     }
 
     private func checkSession() async {
-        isLoading = true
+        defer { isLoading = false }
         do {
             let session = try await supabase.auth.session
             try await fetchAdminRecord(userId: session.user.id.uuidString)
@@ -42,32 +45,20 @@ final class AuthStore: ObservableObject {
         } catch {
             isAuthenticated = false
         }
-        isLoading = false
     }
 
     private func fetchAdminRecord(userId: String) async throws {
         let admins: [AdminUser] = try await supabase
+            .schema(DB.admin)
             .from("administrators")
-            .select("id,user_id,name,email,role")
+            .select("id, user_id, name, email, role")
             .eq("user_id", value: userId)
             .execute()
             .value
+
         guard let admin = admins.first else {
-            try? await supabase.auth.signOut()
-            throw SupabaseError.apiError("Acesso não autorizado. Você não é um administrador.")
+            throw AppError.unauthorized
         }
         currentUser = admin
     }
-}
-
-// MARK: - Model
-struct AdminUser: Decodable, Identifiable {
-    let id: String
-    let userId: String?
-    let name: String?
-    let email: String?
-    let role: String?
-
-    var displayName: String { name ?? email ?? "Admin" }
-    var firstWord: String { displayName.components(separatedBy: " ").first ?? displayName }
 }

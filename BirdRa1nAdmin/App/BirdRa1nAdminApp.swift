@@ -1,4 +1,4 @@
-// Sources/BirdRa1nAdmin/App/BirdRa1nAdminApp.swift
+// BirdRa1nAdmin/App/BirdRa1nAdminApp.swift
 import SwiftUI
 
 @main
@@ -9,11 +9,9 @@ struct BirdRa1nAdminApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(authStore)
-                .preferredColorScheme(.dark)
         }
-        .windowStyle(.hiddenTitleBar)
+        .defaultSize(width: 1100, height: 720)
         .windowResizability(.contentMinSize)
-        .defaultSize(width: 1200, height: 800)
         .commands {
             CommandGroup(replacing: .newItem) {}
         }

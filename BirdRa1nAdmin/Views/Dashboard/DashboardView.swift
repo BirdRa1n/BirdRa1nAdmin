@@ -1,12 +1,13 @@
-// Sources/BirdRa1nAdmin/Views/Dashboard/DashboardView.swift
+// BirdRa1nAdmin/Views/Dashboard/DashboardView.swift
 import SwiftUI
 import Supabase
 
 struct DashboardView: View {
     @Binding var toast: ToastMessage?
+    @EnvironmentObject var authStore: AuthStore
     @State private var stats = DashboardStats()
     @State private var isLoading = true
-    @EnvironmentObject var authStore: AuthStore
+    @State private var loadError: String?
 
     private var greeting: String {
         let h = Calendar.current.component(.hour, from: Date())
@@ -15,253 +16,228 @@ struct DashboardView: View {
         return "Boa noite"
     }
 
-    private var dateString: String {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "pt_BR")
-        f.dateFormat = "EEEE, d 'de' MMMM 'de' yyyy"
-        return f.string(from: Date())
-    }
-
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("// dashboard")
-                        .font(.system(size: 10, design: .monospaced))
-                        .tracking(2)
-                        .foregroundColor(.neon.opacity(0.6))
+            VStack(alignment: .leading, spacing: 20) {
 
+                // Saudação
+                VStack(alignment: .leading, spacing: 4) {
                     Text("\(greeting), \(authStore.currentUser?.firstWord ?? "Admin") 👋")
-                        .font(.system(size: 28, weight: .bold))
-                        .foregroundColor(.textPrimary)
-
-                    Text(dateString)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(.textMuted)
+                        .font(.largeTitle).fontWeight(.bold)
+                    Text(Date().formatted(date: .complete, time: .omitted))
+                        .font(.subheadline).foregroundStyle(.secondary)
                 }
-                .padding(.horizontal, 28)
-                .padding(.top, 28)
+
+                // Erro de carregamento
+                if let err = loadError {
+                    Label(err, systemImage: "exclamationmark.triangle.fill")
+                        .font(.footnote).foregroundStyle(.orange)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.orange.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
 
                 if isLoading {
-                    StatsGridSkeleton()
-                        .padding(.horizontal, 28)
+                    LazyVGrid(columns: gridColumns, spacing: 12) {
+                        ForEach(0..<6) { _ in
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(.secondary.opacity(0.1))
+                                .frame(height: 88)
+                                .shimmer()
+                        }
+                    }
                 } else {
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 5), spacing: 12) {
-                        StatCard(label: "Projetos",    value: stats.projects,     icon: "folder",        color: .neon)
-                        StatCard(label: "Posts",       value: stats.posts,        icon: "doc.text",      color: .neon)
-                        StatCard(label: "Mensagens",   value: stats.newMessages,  icon: "envelope",      color: .warning)
-                        StatCard(label: "Certificados",value: stats.certificates, icon: "rosette",       color: .cyanNeon)
-                        StatCard(label: "Apps",        value: stats.apps,         icon: "iphone",        color: .acid)
+                    // Métricas
+                    LazyVGrid(columns: gridColumns, spacing: 12) {
+                        StatTile(value: stats.projects,    label: "Projetos",        icon: "folder.fill",       tint: .blue)
+                        StatTile(value: stats.posts,       label: "Posts",            icon: "doc.richtext.fill", tint: .indigo)
+                        StatTile(value: stats.newMessages, label: "Novas Mensagens",  icon: "envelope.fill",     tint: .orange)
+                        StatTile(value: stats.certificates,label: "Certificados",     icon: "rosette",           tint: .teal)
+                        StatTile(value: stats.apps,        label: "Apps",             icon: "iphone",            tint: .purple)
+                        StatTile(value: stats.totalViews,  label: "Total de Views",   icon: "eye.fill",          tint: .green)
                     }
-                    .padding(.horizontal, 28)
 
-                    HStack(spacing: 12) {
-                        Image(systemName: "eye").foregroundColor(.neon)
-                        Text("Total de views em projetos:")
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundColor(.textPrimary)
-                        Text(stats.totalViews.formatted())
-                            .font(.system(size: 13, weight: .bold, design: .monospaced))
-                            .foregroundColor(.neon)
-                        Spacer()
-                        Image(systemName: "chart.line.uptrend.xyaxis")
-                            .foregroundColor(.neon.opacity(0.4))
-                    }
-                    .padding(16)
-                    .background(Color.neon.opacity(0.05))
-                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.neon.opacity(0.15), lineWidth: 1))
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                    .padding(.horizontal, 28)
-
+                    // Seções recentes
                     HStack(alignment: .top, spacing: 16) {
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack {
-                                Text("Posts Recentes")
-                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                    .tracking(1).foregroundColor(.textMuted).textCase(.uppercase)
-                                Spacer()
-                            }
+                        RecentCard(title: "Posts Recentes") {
                             if stats.recentPosts.isEmpty {
-                                Text("// Nenhum post ainda")
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundColor(.textMuted.opacity(0.4)).padding(.vertical, 8)
+                                Text("Nenhum post ainda.")
+                                    .font(.subheadline).foregroundStyle(.secondary).padding(16)
                             } else {
-                                ForEach(stats.recentPosts) { post in RecentPostRow(post: post) }
+                                ForEach(Array(stats.recentPosts.enumerated()), id: \.element.id) { i, post in
+                                    if i > 0 { Divider().padding(.leading, 16) }
+                                    HStack(spacing: 10) {
+                                        Image(systemName: "doc.richtext")
+                                            .foregroundStyle(.secondary).frame(width: 18)
+                                        Text(post.title).font(.subheadline).lineLimit(1)
+                                        Spacer()
+                                        StatusBadge(status: post.status)
+                                    }
+                                    .padding(.horizontal, 16).padding(.vertical, 10)
+                                }
                             }
                         }
-                        .frame(maxWidth: .infinity).padding(16)
-                        .background(Color.bgCard)
-                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.border, lineWidth: 1))
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
 
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack {
-                                Text("Mensagens Recentes")
-                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                    .tracking(1).foregroundColor(.textMuted).textCase(.uppercase)
-                                Spacer()
-                            }
+                        RecentCard(title: "Mensagens Recentes") {
                             if stats.recentMessages.isEmpty {
-                                Text("// Nenhuma mensagem ainda")
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundColor(.textMuted.opacity(0.4)).padding(.vertical, 8)
+                                Text("Nenhuma mensagem ainda.")
+                                    .font(.subheadline).foregroundStyle(.secondary).padding(16)
                             } else {
-                                ForEach(stats.recentMessages) { msg in RecentMessageRow(msg: msg) }
+                                ForEach(Array(stats.recentMessages.enumerated()), id: \.element.id) { i, msg in
+                                    if i > 0 { Divider().padding(.leading, 16) }
+                                    HStack(spacing: 10) {
+                                        ZStack {
+                                            Circle().fill(.tint.opacity(0.12)).frame(width: 28, height: 28)
+                                            Text(String(msg.name.prefix(1)).uppercased())
+                                                .font(.caption).fontWeight(.bold).foregroundStyle(.tint)
+                                        }
+                                        VStack(alignment: .leading, spacing: 1) {
+                                            Text(msg.name).font(.subheadline).fontWeight(.medium).lineLimit(1)
+                                            Text(msg.subject ?? "Sem assunto")
+                                                .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                        }
+                                        Spacer()
+                                        if msg.status == "new" {
+                                            Circle().fill(.blue).frame(width: 7, height: 7)
+                                        }
+                                    }
+                                    .padding(.horizontal, 16).padding(.vertical, 10)
+                                }
                             }
                         }
-                        .frame(maxWidth: .infinity).padding(16)
-                        .background(Color.bgCard)
-                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.border, lineWidth: 1))
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
                     }
-                    .padding(.horizontal, 28)
                 }
 
-                Spacer(minLength: 28)
+                Spacer(minLength: 20)
+            }
+            .padding(24)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .navigationTitle("Dashboard")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    Task { await loadStats() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .help("Recarregar dados")
+                .disabled(isLoading)
             }
         }
-        .background(Color.bgPrimary)
         .task { await loadStats() }
+    }
+
+    private var gridColumns: [GridItem] {
+        Array(repeating: GridItem(.flexible(), spacing: 12), count: 3)
     }
 
     private func loadStats() async {
         isLoading = true
-        async let projects: [Project] = (try? await supabase.schema("portfolio").from("projects")
-            .select("id,views_count").execute().value) ?? []
-        async let posts: [BlogPost] = (try? await supabase.schema("blog").from("posts")
-            .select("id,title,slug,status,created_at").limit(5).execute().value) ?? []
-        async let msgs: [ContactMessage] = (try? await supabase.schema("portfolio").from("contact_messages")
-            .select("id,name,email,subject,status,created_at").order("created_at", ascending: false).limit(5).execute().value) ?? []
-        async let newMsgs: [ContactMessage] = (try? await supabase.schema("portfolio").from("contact_messages")
-            .select("id").eq("status", value: "new").execute().value) ?? []
-        async let certs: [Certificate] = (try? await supabase.schema("portfolio").from("certificates")
-            .select("id").execute().value) ?? []
-        async let apps: [StoreApp] = (try? await supabase.schema("store").from("apps")
-            .select("id").execute().value) ?? []
+        loadError = nil
 
-        let (p, po, m, nm, c, a) = await (projects, posts, msgs, newMsgs, certs, apps)
-        stats.projects      = p.count
-        stats.posts         = po.count
-        stats.newMessages   = nm.count
-        stats.certificates  = c.count
-        stats.apps          = a.count
-        stats.totalViews    = p.compactMap { $0.viewsCount }.reduce(0, +)
-        stats.recentPosts   = po
-        stats.recentMessages = m
+        do {
+            // Busca em paralelo — schema explícito em cada chamada
+            async let projectsResult: [Project] = supabase
+                .schema(DB.portfolio).from("projects")
+                .select("id, views_count")
+                .execute().value
+
+            async let postsResult: [BlogPost] = supabase
+                .schema(DB.blog).from("posts")
+                .select("id, title, slug, status, created_at")
+                .order("created_at", ascending: false)
+                .limit(5)
+                .execute().value
+
+            async let msgsResult: [ContactMessage] = supabase
+                .schema(DB.portfolio).from("contact_messages")
+                .select("id, name, email, subject, status, created_at")
+                .order("created_at", ascending: false)
+                .limit(5)
+                .execute().value
+
+            async let newMsgsResult: [ContactMessage] = supabase
+                .schema(DB.portfolio).from("contact_messages")
+                .select("id")
+                .eq("status", value: "new")
+                .execute().value
+
+            async let certsResult: [Certificate] = supabase
+                .schema(DB.portfolio).from("certificates")
+                .select("id")
+                .execute().value
+
+            async let appsResult: [StoreApp] = supabase
+                .schema(DB.store).from("apps")
+                .select("id")
+                .execute().value
+
+            let (projects, posts, msgs, newMsgs, certs, apps) = try await (
+                projectsResult, postsResult, msgsResult,
+                newMsgsResult, certsResult, appsResult
+            )
+
+            stats.projects       = projects.count
+            stats.posts          = posts.count
+            stats.newMessages    = newMsgs.count
+            stats.certificates   = certs.count
+            stats.apps           = apps.count
+            stats.totalViews     = projects.compactMap { $0.viewsCount }.reduce(0, +)
+            stats.recentPosts    = posts
+            stats.recentMessages = msgs
+
+        } catch {
+            loadError = "Erro ao carregar dados: \(error.localizedDescription)"
+        }
+
         isLoading = false
     }
 }
 
-// MARK: - Stat Card
-struct StatCard: View {
-    let label: String
+// MARK: - Stat Tile
+struct StatTile: View {
     let value: Int
+    let label: String
     let icon: String
-    let color: Color
-    @State private var hovered = false
+    let tint: Color
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(color.opacity(0.1))
-                        .overlay(RoundedRectangle(cornerRadius: 3).stroke(color.opacity(0.25), lineWidth: 1))
-                        .frame(width: 36, height: 36)
-                    Image(systemName: icon).font(.system(size: 15)).foregroundColor(color)
-                }
-                Spacer()
-                Image(systemName: "arrow.up.right").font(.system(size: 10))
-                    .foregroundColor(.textMuted.opacity(hovered ? 0.5 : 0.2))
-            }
-            Text("\(value)")
-                .font(.system(size: 28, weight: .bold, design: .monospaced))
-                .foregroundColor(color)
-                .neonGlow(color: color, radius: hovered ? 8 : 0)
-            Text(label.uppercased())
-                .font(.system(size: 9, design: .monospaced)).tracking(2).foregroundColor(.textMuted)
-        }
-        .padding(16).background(Color.bgCard)
-        .overlay(RoundedRectangle(cornerRadius: 4).stroke(hovered ? color.opacity(0.4) : Color.border, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 4))
-        .onHover { hovered = $0 }
-        .animation(.easeInOut(duration: 0.2), value: hovered)
-    }
-}
-
-// MARK: - Recent rows
-struct RecentPostRow: View {
-    let post: BlogPost
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "doc.text").font(.system(size: 11)).foregroundColor(.neon.opacity(0.5))
-            Text(post.title).font(.system(size: 11)).foregroundColor(.textPrimary).lineLimit(1)
-            Spacer()
-            if let status = post.status { StatusBadge(status: status) }
-        }
-        .padding(.vertical, 6).padding(.horizontal, 10)
-        .background(Color.bgCardAlt.opacity(0.5)).clipShape(RoundedRectangle(cornerRadius: 3))
-    }
-}
-
-struct RecentMessageRow: View {
-    let msg: ContactMessage
-    var body: some View {
-        HStack(spacing: 10) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 3)
-                    .fill(Color.neon.opacity(0.08))
-                    .overlay(RoundedRectangle(cornerRadius: 3).stroke(Color.neon.opacity(0.15), lineWidth: 1))
-                    .frame(width: 24, height: 24)
-                Text(String(msg.name.prefix(1)).uppercased())
-                    .font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(.neon)
-            }
-            VStack(alignment: .leading, spacing: 1) {
-                Text(msg.name).font(.system(size: 11, weight: .semibold)).foregroundColor(.textPrimary).lineLimit(1)
-                Text(msg.subject ?? "").font(.system(size: 10, design: .monospaced)).foregroundColor(.textMuted).lineLimit(1)
+        HStack(spacing: 14) {
+            Image(systemName: icon)
+                .font(.title2)
+                .foregroundStyle(tint)
+                .symbolRenderingMode(.hierarchical)
+                .frame(width: 36)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(value)")
+                    .font(.title2).fontWeight(.bold).monospacedDigit()
+                Text(label)
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            if msg.status == "new" {
-                Circle().fill(Color.neon).frame(width: 6, height: 6).shadow(color: .neon, radius: 3)
-            }
         }
-        .padding(.vertical, 6).padding(.horizontal, 10)
-        .background(Color.bgCardAlt.opacity(0.5)).clipShape(RoundedRectangle(cornerRadius: 3))
+        .padding(16)
+        .background(.background.secondary)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }
 
-// MARK: - Skeleton
-struct StatsGridSkeleton: View {
+// MARK: - Recent Card
+struct RecentCard<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: () -> Content
+
     var body: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 5), spacing: 12) {
-            ForEach(0..<5) { _ in
-                RoundedRectangle(cornerRadius: 4).fill(Color.bgCard).frame(height: 110)
-                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.border, lineWidth: 1))
-                    .shimmer()
-            }
+        VStack(alignment: .leading, spacing: 0) {
+            Text(title).font(.headline)
+                .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 10)
+            Divider()
+            content()
         }
+        .background(.background.secondary)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .frame(maxWidth: .infinity)
     }
-}
-
-// MARK: - Shimmer
-struct Shimmer: ViewModifier {
-    @State private var phase: CGFloat = 0
-    func body(content: Content) -> some View {
-        content.overlay(
-            LinearGradient(
-                stops: [
-                    .init(color: .clear, location: phase - 0.3),
-                    .init(color: Color.neon.opacity(0.04), location: phase),
-                    .init(color: .clear, location: phase + 0.3),
-                ],
-                startPoint: .leading, endPoint: .trailing
-            )
-            .animation(.linear(duration: 1.5).repeatForever(autoreverses: false), value: phase)
-            .onAppear { phase = 1.3 }
-        )
-    }
-}
-
-extension View {
-    func shimmer() -> some View { modifier(Shimmer()) }
 }
